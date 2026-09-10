@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     # recognition) — verified current at build time, see stt.py.
     stt_model: str = Field("gpt-4o-transcribe", validation_alias="ZAKI_STT_MODEL")
 
+    # Cheap cross-vendor fallback tier in pipeline.py's cascade — sits
+    # between Gemini and Claude (cheaper/faster than Claude, only used
+    # once Gemini, including its own internal fallback model, has already
+    # failed). Reuses OPENAI_API_KEY above; the cascade tier is simply
+    # skipped if that isn't set.
+    openai_fallback_model: str = Field("gpt-4o-mini", validation_alias="ZAKI_OPENAI_FALLBACK_MODEL")
+
     # --- Text-to-speech (step 7) ---------------------------------------------
     # Switched from ElevenLabs to edge-tts 2026-09-08 per user decision (no
     # paid services) — edge-tts wraps Microsoft Edge's free online TTS, no

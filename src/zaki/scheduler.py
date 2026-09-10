@@ -38,6 +38,7 @@ from datetime import datetime
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import create_engine, text
 
 logger = logging.getLogger(__name__)
@@ -159,4 +160,34 @@ def schedule_daily_briefing(*, chat_id: int, hour: int, minute: int) -> None:
         id="daily_briefing",
         replace_existing=True,
         misfire_grace_time=_BRIEFING_MISFIRE_GRACE,
+    )
+
+
+def _cleanup_stray_temp_files(temp_dir: str, max_age_hours: float) -> None:
+    """Everything the TTS/STT/ffmpeg pipeline itself touches is in-memory
+    (BytesIO/subprocess pipes, never a disk file) by design — this exists
+    purely as a defensive net for whatever else might land in the temp
+    dir (e.g. Starlette's UploadFile spilling a large upload to disk) and
+    then get orphaned by a crash before its own cleanup ran.
+    """
+    if not os.path.isdir(temp_dir):
+        return
+    cutoff = datetime.now().timestamp() - max_age_hours * 3600
+    for name in os.listdir(temp_dir):
+        path = os.path.join(temp_dir, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                logger.info("Removed stray temp file: %s", path)
+        except OSError:
+            logger.exception("Failed to remove stray temp file: %s", path)
+
+
+def schedule_temp_cleanup(*, temp_dir: str, max_age_hours: float = 1.0) -> None:
+    scheduler.add_job(
+        _cleanup_stray_temp_files,
+        IntervalTrigger(minutes=30),
+        kwargs={"temp_dir": temp_dir, "max_age_hours": max_age_hours},
+        id="temp_cleanup",
+        replace_existing=True,
     )

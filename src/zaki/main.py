@@ -10,6 +10,7 @@ Step 7 (spec §3.3): TTS endpoint (voice output).
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import tempfile
@@ -29,9 +30,16 @@ from zaki.auth_google import (
 from zaki.config import Settings, get_settings
 from zaki.context import ContextProvider, get_context_provider
 from zaki import dashboard as dashboard_module
-from zaki.db import close_pool, run_migrations
+from zaki.db import close_pool, get_pool, run_migrations
 from zaki.pipeline import run_assistant_pipeline
-from zaki.scheduler import configure_scheduler, schedule_daily_briefing, shutdown_scheduler, start_scheduler
+from zaki.scheduler import (
+    configure_scheduler,
+    schedule_daily_briefing,
+    schedule_temp_cleanup,
+    scheduler,
+    shutdown_scheduler,
+    start_scheduler,
+)
 from zaki.schemas import AssistantRequest, AssistantResponse, TTSRequest
 from zaki.stt import transcribe
 from zaki import telegram as telegram_module
@@ -62,6 +70,7 @@ async def lifespan(app: FastAPI):
     await migrate_file_token_to_postgres()
 
     polling_task: asyncio.Task | None = None
+    app.state.telegram_mode = "disabled"
     if settings.telegram_bot_token and settings.telegram_allowed_user_id:
         # Telegram flatly rejects setWebhook for anything but a real
         # https:// URL (unlike Evolution API, which accepted our plain
@@ -75,15 +84,19 @@ async def lifespan(app: FastAPI):
                     public_base_url=settings.public_base_url,
                     webhook_secret=settings.telegram_webhook_secret.get_secret_value(),
                 )
+                app.state.telegram_mode = "webhook"
             except RuntimeError as exc:
                 logger.warning("Telegram webhook registration failed, falling back to polling: %s", exc)
                 polling_task = asyncio.create_task(
                     telegram_module.run_polling_loop(settings, get_context_provider())
                 )
+                app.state.telegram_mode = "polling"
         else:
             polling_task = asyncio.create_task(
                 telegram_module.run_polling_loop(settings, get_context_provider())
             )
+            app.state.telegram_mode = "polling"
+    app.state.telegram_polling_task = polling_task
 
     configure_scheduler(db_url=settings.reminders_db_url, db_path=settings.reminders_db_path)
     start_scheduler()
@@ -93,6 +106,11 @@ async def lifespan(app: FastAPI):
             hour=settings.daily_briefing_hour,
             minute=settings.daily_briefing_minute,
         )
+    # Always scheduled, not just when ZAKI_TEMP_DIR is explicitly set —
+    # tempfile.gettempdir() reflects whatever's actually in effect (the
+    # override above, or the OS default), so this covers both this
+    # machine's Y:\zaki\temp and Render's /app/temp-or-wherever equally.
+    schedule_temp_cleanup(temp_dir=tempfile.gettempdir())
 
     yield
 
@@ -111,8 +129,64 @@ app.include_router(google_auth_router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request, settings: SettingsDep) -> Response:
+    """Deep status check, not just "the process is alive" — meant for both
+    human debugging and an external uptime pinger (e.g. cron-job.org)
+    hitting this on a schedule to keep a free Render instance from
+    spinning down. Always returns 200 (even when a sub-check is unhealthy)
+    so the pinger doesn't itself start alerting on things this endpoint
+    already reports in the body — check the JSON, not just the status code.
+
+    Note on "env validation": there's no meaningful way to catch a missing
+    *required* setting here — if one were actually missing, get_settings()
+    would have raised at startup and this process wouldn't be running to
+    serve the request at all. (An earlier version of this check read
+    os.environ directly and always reported every var "missing" — pydantic-
+    settings parses .env itself and never writes those values into
+    os.environ, so that check was testing the wrong thing entirely.) What's
+    actually useful to report is which *optional* integrations are wired
+    up, since those fail silently otherwise.
+    """
+    db_status = "unknown"
+    try:
+        pool = await get_pool()
+        await pool.fetchval("SELECT 1")
+        db_status = "ok"
+    except Exception as exc:
+        db_status = f"error: {exc}"
+
+    try:
+        scheduler_jobs = len(scheduler.get_jobs())
+        scheduler_status = "running" if scheduler.running else "stopped"
+    except Exception as exc:
+        scheduler_jobs = 0
+        scheduler_status = f"error: {exc}"
+
+    telegram_mode = getattr(request.app.state, "telegram_mode", "disabled")
+    polling_task = getattr(request.app.state, "telegram_polling_task", None)
+    if telegram_mode == "polling":
+        telegram_status = "running" if polling_task and not polling_task.done() else "stopped"
+    elif telegram_mode == "webhook":
+        telegram_status = "registered"
+    else:
+        telegram_status = "disabled"
+
+    integrations = {
+        "openai_stt_and_fallback_model": settings.openai_api_key is not None,
+        "whatsapp": bool(settings.evolution_api_url and settings.evolution_api_key),
+        "twilio": bool(settings.twilio_account_sid and settings.twilio_auth_token),
+        "google_oauth": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
+        "reminders_persistent_store": "postgres" if settings.reminders_db_url else "sqlite",
+    }
+
+    body = {
+        "status": "ok",
+        "database": db_status,
+        "scheduler": {"status": scheduler_status, "jobs": scheduler_jobs},
+        "telegram": {"mode": telegram_mode, "status": telegram_status},
+        "integrations": integrations,
+    }
+    return Response(content=json.dumps(body, ensure_ascii=False), media_type="application/json")
 
 
 @app.post(

@@ -43,6 +43,22 @@ class ToolRegistry:
             for t in self.available(google_connected=google_connected)
         ]
 
+    def render_for_openai(self, *, google_connected: bool) -> list[dict[str, Any]]:
+        # OpenAI's function schema accepts additionalProperties directly
+        # (no stripping needed like Gemini) — same JSON Schema shape as
+        # Claude's input_schema, just wrapped differently.
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                },
+            }
+            for t in self.available(google_connected=google_connected)
+        ]
+
     def render_for_gemini(self, *, google_connected: bool) -> list[genai_types.Tool]:
         declarations = [
             genai_types.FunctionDeclaration(
