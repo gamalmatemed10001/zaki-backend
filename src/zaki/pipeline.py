@@ -132,7 +132,27 @@ async def run_assistant_pipeline(
     # Google credentials are loaded fresh per request — cheap (an indexed
     # single-row Postgres lookup + refresh-if-expired) and keeps the
     # "connected?" state accurate without a background refresh job.
-    google_credentials = await get_google_credentials(get_token_store())
+    #
+    # This call can genuinely fail even when everything else is healthy:
+    # creds.refresh() talks to Google's token endpoint synchronously, and
+    # a revoked/expired refresh token (user revoked access in their
+    # Google Account, or the OAuth client's secret was rotated) makes it
+    # raise google.auth.exceptions.RefreshError — confirmed live, this is
+    # exactly the uncaught exception that was turning every request,
+    # Telegram and web alike, into a bare 500 the moment the stored token
+    # went stale. A broken Google connection must never take down the
+    # rest of the assistant — every other tool (tasks, notes, reminders,
+    # WhatsApp, web search) has nothing to do with Google and should keep
+    # working regardless.
+    try:
+        google_credentials = await get_google_credentials(get_token_store())
+    except Exception:
+        logger.exception(
+            "Google credentials load/refresh failed — continuing this turn "
+            "without Google tools instead of crashing"
+        )
+        google_credentials = None
+
     tool_context = ToolContext(
         session_id=session_id,
         turn_id=uuid.uuid4().hex,
@@ -151,6 +171,19 @@ async def run_assistant_pipeline(
     # it has no other way to know "now" otherwise. Appended per-request
     # (not baked into the static SYSTEM_PROMPT) so it's always current.
     system_with_time = SYSTEM_PROMPT + _current_time_context()
+
+    # Give the model the actual reconnect link whenever Google isn't
+    # connected (never authorized yet, or the refresh above just failed) —
+    # without this it could only say "not available", with no path
+    # forward for the user to fix it themselves.
+    if google_credentials is None:
+        login_url = f"{settings.public_base_url.rstrip('/')}/auth/google/login" if settings.public_base_url else "/auth/google/login"
+        system_with_time += (
+            "\n\n## حالة حساب جوجل\nحساب جوجل غير متصل حاليًا، فأدوات التقويم "
+            "والبريد الإلكتروني ودرايف غير متاحة في هذه المحادثة. إذا طلب "
+            "المستخدم استخدام إحداها أو سأل عن السبب، أخبره بصراحة أنّ الحساب "
+            f"غير متصل وأرشده لإعادة الربط عبر هذا الرابط: {login_url}"
+        )
 
     cascade = _build_cascade(route, settings)
 
