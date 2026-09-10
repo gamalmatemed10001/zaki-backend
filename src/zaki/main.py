@@ -171,9 +171,18 @@ async def health(request: Request, settings: SettingsDep) -> Response:
     else:
         telegram_status = "disabled"
 
+    whatsapp_configured = bool(settings.evolution_api_url and settings.evolution_api_key)
+    if whatsapp_configured:
+        try:
+            whatsapp_status = await whatsapp.get_whatsapp_connection_status()
+        except Exception as exc:
+            whatsapp_status = f"error: {exc}"
+    else:
+        whatsapp_status = "not configured"
+
     integrations = {
         "openai_stt_and_fallback_model": settings.openai_api_key is not None,
-        "whatsapp": bool(settings.evolution_api_url and settings.evolution_api_key),
+        "whatsapp": whatsapp_status,
         "twilio": bool(settings.twilio_account_sid and settings.twilio_auth_token),
         "google_oauth": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
         "reminders_persistent_store": "postgres" if settings.reminders_db_url else "sqlite",
