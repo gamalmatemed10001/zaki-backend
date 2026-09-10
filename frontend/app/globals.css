@@ -1,0 +1,413 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0d14;
+  --surface: #12151f;
+  --foreground: #f2f3f7;
+  --muted: #8b90a3;
+  --accent: #7c5cff;
+  --accent-2: #22d3ee;
+  --danger: #ff5470;
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Vanilla-CSS motion tokens — no JS animation runtime for continuous
+     loops. cubic-bezier curves picked for a "buttery", overshoot-free feel:
+     ease-out-expo for anything settling into a new state, ease-in-out-smooth
+     for anything that breathes/loops in place. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-smooth: cubic-bezier(0.65, 0, 0.35, 1);
+  --orb-state-transition: transform 0.5s var(--ease-out-expo),
+    opacity 0.5s var(--ease-out-expo), background 0.5s var(--ease-out-expo);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-tajawal);
+}
+
+body {
+  background:
+    radial-gradient(1200px 800px at 15% -10%, rgba(124, 92, 255, 0.25), transparent 60%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(34, 211, 238, 0.18), transparent 55%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, sans-serif;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+}
+
+/* ---------------------------------------------------------------------
+   Voice Orb — pure CSS, GPU-accelerated (transform/opacity only, so the
+   compositor handles every frame off the main thread).
+
+   `--level` (0..1) is written directly onto this element's inline style
+   by lib/useAudioAnalyser.ts on every animation frame, bypassing React
+   state/re-render entirely — the orb reacts to live audio at 60fps
+   without React ever knowing a frame happened.
+
+   State switches (idle/listening/thinking/speaking) are plain
+   [data-state] selectors; `--orb-state-transition` cubic-beziers the
+   handoff between states so nothing ever hard-cuts.
+   ------------------------------------------------------------------- */
+
+@keyframes orb-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.4rem);
+  }
+}
+
+@keyframes orb-idle-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.6;
+  }
+}
+
+@keyframes orb-core-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes orb-thinking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+.voice-orb {
+  --level: 0;
+  --band-0: 0;
+  --band-1: 0;
+  --band-2: 0;
+  --band-3: 0;
+  --band-4: 0;
+  position: relative;
+  width: 13rem;
+  height: 13rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-orb[data-state="idle"] {
+  animation: orb-float 6s var(--ease-in-out-smooth) infinite;
+}
+
+/* One-shot bright pulse the instant the wake word fires — distinct from
+   the ongoing per-state loops above, so hands-free activation has its own
+   visible beat instead of just quietly switching to the listening state. */
+@keyframes orb-wake-flash {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  35% {
+    filter: brightness(1.8) drop-shadow(0 0 2rem var(--accent-2));
+  }
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+}
+
+.voice-orb[data-wake="true"] {
+  animation: orb-wake-flash 0.6s var(--ease-out-expo);
+}
+
+.orb-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  filter: blur(32px);
+  will-change: transform, opacity;
+  transition: var(--orb-state-transition);
+  background: radial-gradient(circle, var(--accent), transparent 70%);
+}
+
+.voice-orb[data-state="idle"] .orb-glow {
+  animation: orb-idle-breathe 3.2s var(--ease-in-out-smooth) infinite;
+}
+
+.voice-orb[data-state="thinking"] .orb-glow {
+  transform: scale(1.1);
+  opacity: 0.6;
+}
+
+.voice-orb[data-state="listening"] .orb-glow,
+.voice-orb[data-state="speaking"] .orb-glow {
+  animation: none;
+  transform: scale(calc(1 + var(--level) * 0.6));
+  opacity: calc(0.55 + var(--level) * 0.3);
+  transition: transform 0.08s linear, opacity 0.08s linear, background 0.5s var(--ease-out-expo);
+}
+
+.voice-orb[data-state="speaking"] .orb-glow {
+  background: radial-gradient(circle, var(--accent-2), transparent 70%);
+}
+
+.orb-ring {
+  position: absolute;
+  inset: 1.5rem;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, var(--accent), var(--accent-2), var(--accent));
+  will-change: transform;
+  transition: var(--orb-state-transition), -webkit-mask-image 0.4s var(--ease-out-expo),
+    mask-image 0.4s var(--ease-out-expo);
+  -webkit-mask-image: radial-gradient(circle, black 100%);
+  mask-image: radial-gradient(circle, black 100%);
+}
+
+.voice-orb[data-state="thinking"] .orb-ring {
+  animation: orb-thinking-spin 1.4s linear infinite;
+  -webkit-mask-image: radial-gradient(circle, transparent 55%, black 58%, black 100%);
+  mask-image: radial-gradient(circle, transparent 55%, black 58%, black 100%);
+}
+
+.voice-orb[data-state="listening"] .orb-ring,
+.voice-orb[data-state="speaking"] .orb-ring {
+  animation: none;
+  transform: scale(calc(1 + var(--level) * 0.6));
+  transition: transform 0.08s linear;
+}
+
+.orb-core {
+  position: relative;
+  width: 6rem;
+  height: 6rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.5s var(--ease-out-expo);
+}
+
+.voice-orb[data-state="idle"] .orb-core {
+  animation: orb-core-breathe 3.2s var(--ease-in-out-smooth) infinite;
+}
+
+.mic-button.is-listening {
+  animation: mic-pulse 1s var(--ease-in-out-smooth) infinite;
+}
+
+/* --- Ambient wave blobs — slow, independent drift behind everything else,
+   giving the sphere a "fluid energy" backdrop. Two blobs on offset
+   durations/directions so they never sync into a static pattern. ------- */
+
+@keyframes orb-wave-drift-1 {
+  0% {
+    transform: translate(-6%, -4%) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate(5%, 6%) scale(1.15) rotate(180deg);
+  }
+  100% {
+    transform: translate(-6%, -4%) scale(1) rotate(360deg);
+  }
+}
+
+@keyframes orb-wave-drift-2 {
+  0% {
+    transform: translate(6%, 5%) scale(1.1) rotate(0deg);
+  }
+  50% {
+    transform: translate(-5%, -6%) scale(0.95) rotate(-180deg);
+  }
+  100% {
+    transform: translate(6%, 5%) scale(1.1) rotate(-360deg);
+  }
+}
+
+.orb-ambient-wave {
+  position: absolute;
+  inset: -1.5rem;
+  border-radius: 40% 60% 55% 45% / 50% 45% 55% 50%;
+  filter: blur(24px);
+  opacity: 0.35;
+  will-change: transform;
+  transition: opacity 0.6s var(--ease-out-expo);
+}
+
+.orb-ambient-wave-1 {
+  background: radial-gradient(circle at 35% 35%, var(--accent), transparent 65%);
+  animation: orb-wave-drift-1 9s var(--ease-in-out-smooth) infinite;
+}
+
+.orb-ambient-wave-2 {
+  background: radial-gradient(circle at 65% 65%, var(--accent-2), transparent 65%);
+  animation: orb-wave-drift-2 11s var(--ease-in-out-smooth) infinite;
+}
+
+.voice-orb[data-state="thinking"] .orb-ambient-wave,
+.voice-orb[data-state="listening"] .orb-ambient-wave,
+.voice-orb[data-state="speaking"] .orb-ambient-wave {
+  opacity: 0.55;
+}
+
+/* --- Particle ring — 12 dots on a rotating ring, orbiting at a speed and
+   glow tied to orb state via [data-state], all pure transform/opacity. -- */
+
+@keyframes orb-particles-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.orb-particle-ring {
+  position: absolute;
+  inset: 0.25rem;
+  border-radius: 9999px;
+  animation: orb-particles-spin 18s linear infinite;
+  transition: animation-duration 0.5s var(--ease-out-expo);
+}
+
+.voice-orb[data-state="listening"] .orb-particle-ring,
+.voice-orb[data-state="speaking"] .orb-particle-ring {
+  /* Louder audio (--level, 0..1) spins the ring faster and lights the
+     particles brighter — both computed straight from the CSS var the
+     analyser writes each frame, no JS beyond that single DOM write. */
+  animation-duration: calc(6s - var(--level) * 4.5s);
+  filter: brightness(calc(1 + var(--level) * 1.2)) saturate(calc(1 + var(--level) * 0.5));
+}
+
+.voice-orb[data-state="thinking"] .orb-particle-ring {
+  animation-duration: 3s;
+}
+
+.orb-particle {
+  --angle: calc(var(--i) * 30deg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--accent-2);
+  opacity: 0.7;
+  box-shadow: 0 0 6px 1px var(--accent-2);
+  transform: rotate(var(--angle)) translateY(-6.4rem);
+}
+
+.voice-orb[data-state="idle"] .orb-particle {
+  opacity: 0.35;
+}
+
+/* --- Frequency-band visualizer bars — 5 bars arced under the core,
+   each height driven by --band-0..--band-4, written every animation frame
+   by lib/useAudioAnalyser.ts. Idle/thinking keep them flat at rest. ----- */
+
+.orb-bars {
+  position: absolute;
+  bottom: 1.4rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  height: 1.5rem;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-out-expo);
+}
+
+.voice-orb[data-state="listening"] .orb-bars,
+.voice-orb[data-state="speaking"] .orb-bars {
+  opacity: 1;
+}
+
+.orb-bar {
+  width: 3px;
+  min-height: 3px;
+  height: calc(3px + var(--band, 0) * 1.4rem);
+  border-radius: 3px;
+  background: linear-gradient(to top, var(--accent), var(--accent-2));
+  transition: height 0.06s linear;
+}
+
+/* ---------------------------------------------------------------------
+   Dashboard grid — side glass panels for tool widgets flank the chat
+   column. Grid track order is direction-aware (the first track sits at
+   the inline-start edge), so under dir="rtl" the first panel in markup
+   naturally lands on the right without any RTL-specific overrides here.
+   ------------------------------------------------------------------- */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 17rem minmax(0, 1fr) 17rem;
+    align-items: start;
+  }
+}
+
+.widget-card {
+  transition: transform 0.3s var(--ease-out-expo), background 0.3s var(--ease-out-expo);
+}
+
+.widget-card:hover {
+  transform: translateY(-2px);
+}
+
+.task-checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--accent-2);
+  flex-shrink: 0;
+}
+
+.task-checkbox.is-done {
+  background: var(--accent-2);
+}

@@ -1,0 +1,48 @@
+# Secrets — never commit these (spec §8).
+.env
+.env.local
+.env.*.local
+!.env.example
+.mcp.json
+.google_token.json
+*.pem
+
+# Local databases / generated state
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/
+temp/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Node (frontend/ and evolution-api/ each have their own lockfiles/deps —
+# ignored everywhere they appear, not just at root)
+node_modules/
+.next/
+package-lock.json
+npm-debug.log*
+
+# Evolution API — a large, separately-maintained third-party service
+# vendored locally for self-hosting, not authored as part of this project;
+# tracking its own source here would bloat this repo with someone else's
+# entire codebase. Deploy/manage it independently of this repo.
+evolution-api/
+evolution-api-main.zip
+
+# Windows/OS
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/

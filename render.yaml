@@ -1,0 +1,77 @@
+# Render Blueprint — see the step-by-step deploy instructions at the end
+# of the conversation for how to actually connect this.
+#
+# IMPORTANT — Render's free plan has NO persistent disk at all (that's a
+# paid add-on); the container's local filesystem resets on every redeploy
+# AND on every spin-down/wake cycle a free service goes through after 15
+# minutes of inactivity. A SQLite reminders.db would silently lose every
+# reminder the very first time that happens. Set ZAKI_REMINDERS_DB_URL
+# below to a Postgres connection string (the same Supabase project this
+# app already uses for everything else works fine — use the DIRECT,
+# non-pgbouncer URL) and scheduler.py routes persistence there instead,
+# in its own isolated "zaki_scheduler" schema. Leave it unset and
+# reminders still work, they just don't survive a restart — a clean
+# fallback, not a crash.
+#
+# ZAKI_PUBLIC_BASE_URL is deliberately NOT set here — leaving it unset
+# keeps Telegram in long-polling mode (what was asked for). Setting it to
+# this service's own https://*.onrender.com URL would switch Telegram to
+# webhook mode instead (also supported, just not the default here).
+
+services:
+  - type: web
+    name: zaki-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ZAKI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: EVOLUTION_API_URL
+        sync: false
+      - key: EVOLUTION_API_KEY
+        sync: false
+      - key: EVOLUTION_INSTANCE_NAME
+        sync: false
+      - key: WHATSAPP_WEBHOOK_TOKEN
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_ID
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      # Recommended — see the top-of-file note on why SQLite alone won't
+      # survive this plan.
+      - key: ZAKI_REMINDERS_DB_URL
+        sync: false
+
+    # Uncomment only on a paid plan that supports persistent disks — on
+    # free, Render will reject this block outright.
+    # disk:
+    #   name: zaki-data
+    #   mountPath: /data
+    #   sizeGB: 1

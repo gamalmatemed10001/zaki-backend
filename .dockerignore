@@ -1,0 +1,35 @@
+# Secrets — never bake these into an image layer.
+.env
+.env.*
+!.env.example
+.mcp.json
+.google_token.json
+*.pem
+
+# This backend's own image only needs pyproject.toml + src/ + static/
+# (see Dockerfile's COPY lines) — everything else here is either a
+# separate service (frontend, evolution-api) or local-only tooling.
+.venv/
+frontend/
+evolution-api/
+evolution-api-main.zip
+windows_client/
+iphone_shortcut/
+.agents/
+.claude/
+node_modules/
+package-lock.json
+skills-lock.json
+
+# Local state / generated artifacts
+data/
+temp/
+*.db
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+tests/
+scripts/
+voice_samples/

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv .venv)",
+      "Bash(cat /tmp/zaki-server.log 2>&1 | tail -50)",
+      "Bash(powershell -NoProfile -Command 'Get-Process python -ErrorAction SilentlyContinue | Where-Object {$_.Path -like '\\\\''*zaki-assistant-os*'\\\\''} | Stop-Process -Force')",
+      "Bash(netstat -ano)",
+      "Bash(echo \"exit:$?\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue)",
+      "PowerShell(& \"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe\" --version)"
+    ]
+  }
+}
