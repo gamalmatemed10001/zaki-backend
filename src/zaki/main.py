@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from twilio.request_validator import RequestValidator
 
 from zaki.auth import require_api_key
@@ -125,6 +126,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Zaki Assistant OS", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in get_settings().zaki_frontend_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(google_auth_router)
 
 

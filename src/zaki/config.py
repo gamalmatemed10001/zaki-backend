@@ -179,6 +179,21 @@ class Settings(BaseSettings):
     # guarantees Zaki's own temp files land on Y: regardless of that timing.
     zaki_temp_dir: str | None = Field(None, validation_alias="ZAKI_TEMP_DIR")
 
+    # --- CORS -----------------------------------------------------------------
+    # Comma-separated allowed origins for browser-facing requests (the
+    # static test form served at "/", and any future direct browser->
+    # backend call). The Next.js dashboard's own chat/dashboard/speak
+    # calls don't actually need this — they go through its own server-
+    # side Route Handlers (same-origin from the browser's point of view,
+    # server-to-server to here, and CORS only ever applies to the former)
+    # — but explicit, restrictive origins cost nothing and cover any
+    # client that does call this API directly from a browser. Defaults to
+    # local frontend dev only; add the deployed frontend's real origin
+    # (e.g. https://your-app.vercel.app) here in production.
+    zaki_frontend_origins: str = Field(
+        "http://localhost:3000", validation_alias="ZAKI_FRONTEND_ORIGINS"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

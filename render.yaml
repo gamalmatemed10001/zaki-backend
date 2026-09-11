@@ -68,6 +68,11 @@ services:
       # survive this plan.
       - key: ZAKI_REMINDERS_DB_URL
         sync: false
+      # Comma-separated allowed browser origins for CORS — add the
+      # deployed frontend's real origin here (defaults to localhost:3000
+      # only if unset, which is wrong for production).
+      - key: ZAKI_FRONTEND_ORIGINS
+        sync: false
 
     # Uncomment only on a paid plan that supports persistent disks — on
     # free, Render will reject this block outright.
