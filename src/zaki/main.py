@@ -392,6 +392,31 @@ async def whatsapp_webhook(
     return {"status": "ok"}
 
 
+@app.get("/api/whatsapp/qr")
+async def whatsapp_qr(settings: SettingsDep, key: str | None = None) -> Response:
+    """Serves the most recent WhatsApp reconnect QR code (populated by the
+    reconnect_whatsapp_session tool) as a plain PNG image. Meant to be
+    opened directly in a phone's browser to scan — a header-based API key
+    can't be attached from a tapped link, so this uses the same query-
+    param-token convention as the WhatsApp webhook above instead of
+    require_api_key.
+    """
+    if key != settings.zaki_api_key.get_secret_value():
+        raise HTTPException(status_code=401, detail="Missing or invalid key")
+
+    qr = whatsapp.get_cached_qr_base64()
+    if qr is None:
+        raise HTTPException(
+            status_code=404,
+            detail="لا يوجد رمز QR متاح حاليًا — اطلب من زكي إعادة الاتصال أولاً",
+        )
+
+    if "," in qr:
+        qr = qr.split(",", 1)[1]
+    image_bytes = base64.b64decode(qr)
+    return Response(content=image_bytes, media_type="image/png")
+
+
 @app.post("/api/webhooks/twilio/voice")
 async def twilio_voice_webhook(request: Request, settings: SettingsDep) -> Response:
     """Twilio fetches this the moment a call connects (both for calls Zaki

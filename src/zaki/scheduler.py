@@ -34,6 +34,7 @@ pushed to from a background job.
 import logging
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -43,7 +44,14 @@ from sqlalchemy import create_engine, text
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+# Explicit, not the APScheduler default (the host's local timezone via
+# tzlocal): Render's containers run in UTC, so a naive datetime handed to
+# add_job (e.g. reminders.py's create_reminder, which resolves relative
+# Arabic time expressions into a naive Cairo-local ISO string using
+# pipeline.py's injected "now") would otherwise be interpreted as UTC —
+# the same 2-3 hour shift bug fixed for Google Calendar in tools/
+# calendar.py, but for reminder delivery times instead.
+scheduler = AsyncIOScheduler(timezone=ZoneInfo("Africa/Cairo"))
 
 # A reminder about a specific thing is still worth delivering even if the
 # laptop was off/asleep well past the trigger time — no cutoff.

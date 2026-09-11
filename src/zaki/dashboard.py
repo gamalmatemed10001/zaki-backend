@@ -9,11 +9,14 @@ task created via the tool-call path shows up here immediately.
 
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from zaki.db import get_pool
+
+_CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
 
 async def get_tasks(limit: int = 20) -> list[dict[str, Any]]:
@@ -68,11 +71,22 @@ async def get_calendar_events(
     )
     events = []
     for e in result.get("items", []):
+        start_info = e["start"]
+        if "dateTime" in start_info:
+            # Google's dateTime always carries a correct UTC offset, but
+            # this app previously passed it through unmodified — anchor it
+            # explicitly to Cairo (astimezone, not a naive strip) so the
+            # widget always shows the same wall-clock time create_event
+            # (tools/calendar.py) and the chat both use, regardless of
+            # which offset the raw API response happened to use.
+            start = datetime.fromisoformat(start_info["dateTime"]).astimezone(_CAIRO_TZ).isoformat()
+        else:
+            start = start_info.get("date")  # all-day event — a bare date, no timezone to convert
         events.append(
             {
                 "id": e.get("id", ""),
                 "summary": e.get("summary", "(بدون عنوان)"),
-                "start": e["start"].get("dateTime", e["start"].get("date")),
+                "start": start,
                 "link": e.get("htmlLink"),
             }
         )

@@ -15,7 +15,7 @@ async def create_task(args: dict[str, Any], context: ToolContext) -> str:
         args["title"],
         args.get("due_at"),
     )
-    return f"Task created: {args['title']} (id: {row['id']})"
+    return f"تمّت إضافة المهمة: {args['title']} (المعرّف: {row['id']})"
 
 
 async def list_tasks(args: dict[str, Any], context: ToolContext) -> str:
@@ -31,11 +31,11 @@ async def list_tasks(args: dict[str, Any], context: ToolContext) -> str:
             "ORDER BY due_at NULLS LAST, created_at"
         )
     if not rows:
-        return "No tasks." if not include_done else "No tasks at all, done or not."
+        return "لا توجد مهام معلّقة." if not include_done else "لا توجد أي مهام على الإطلاق."
     lines = []
     for r in rows:
         mark = "✓" if r["done"] else "○"
-        due = f" (due {r['due_at']})" if r["due_at"] else ""
+        due = f" (الموعد: {r['due_at']})" if r["due_at"] else ""
         lines.append(f"- [{mark}] [{r['id']}] {r['title']}{due}")
     return "\n".join(lines)
 
@@ -51,10 +51,32 @@ async def complete_task(args: dict[str, Any], context: ToolContext) -> str:
             args["task_id"],
         )
     except Exception:
-        return f"Error: '{args['task_id']}' isn't a valid task id"
+        return f"خطأ: \"{args['task_id']}\" ليس معرّف مهمة صالحًا."
     if row is None:
-        return f"Error: no task with id {args['task_id']}"
-    return f"Marked done: {row['title']}"
+        return f"خطأ: لا توجد مهمة بالمعرّف {args['task_id']}."
+    return f"تمّ وضع علامة إنجاز على: {row['title']}"
+
+
+async def delete_task(args: dict[str, Any], context: ToolContext) -> str:
+    pool = await get_pool()
+    try:
+        row = await pool.fetchrow(
+            "DELETE FROM tasks WHERE id = $1::uuid RETURNING title",
+            args["task_id"],
+        )
+    except Exception:
+        return f"خطأ: \"{args['task_id']}\" ليس معرّف مهمة صالحًا."
+    if row is None:
+        return f"خطأ: لا توجد مهمة بالمعرّف {args['task_id']}."
+    return f"تمّ حذف المهمة: {row['title']}"
+
+
+async def clear_completed_tasks(args: dict[str, Any], context: ToolContext) -> str:
+    pool = await get_pool()
+    rows = await pool.fetch("DELETE FROM tasks WHERE done = TRUE RETURNING id")
+    if not rows:
+        return "لا توجد مهام منجَزة لحذفها."
+    return f"تمّ حذف {len(rows)} مهمة منجَزة."
 
 
 TOOLS = [
@@ -97,6 +119,28 @@ TOOLS = [
             "additionalProperties": False,
         },
         handler=complete_task,
+        requires_google=False,
+    ),
+    ToolDefinition(
+        name="delete_task",
+        description=(
+            "Permanently delete a single task by its id (from list_tasks), whether done or not. "
+            "Confirm with the user which task before calling this."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {"task_id": {"type": "string", "description": "UUID from list_tasks"}},
+            "required": ["task_id"],
+            "additionalProperties": False,
+        },
+        handler=delete_task,
+        requires_google=False,
+    ),
+    ToolDefinition(
+        name="clear_completed_tasks",
+        description="Permanently delete every task already marked done. Does not touch pending tasks.",
+        parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        handler=clear_completed_tasks,
         requires_google=False,
     ),
 ]
