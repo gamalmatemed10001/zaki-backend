@@ -37,7 +37,13 @@ export default function Home() {
     useAudioAnalyser();
 
   const refreshDashboard = useCallback(() => {
-    void fetchDashboard().then((data) => data && setDashboardData(data));
+    void fetchDashboard().then(({ data, error: dashboardError }) => {
+      // On failure `data` is null -- leave any existing (possibly
+      // stale-but-good) widget data as-is rather than wiping it, and
+      // surface the failure as a toast instead of failing silently.
+      if (data) setDashboardData(data);
+      if (dashboardError) setError(dashboardError);
+    });
   }, []);
 
   useEffect(() => {

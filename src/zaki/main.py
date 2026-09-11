@@ -305,7 +305,19 @@ async def dashboard() -> dict:
     tool call Zaki just made (e.g. create_task) is reflected without a
     manual refresh.
     """
-    google_credentials = await get_google_credentials(get_token_store())
+    try:
+        google_credentials = await get_google_credentials(get_token_store())
+    except Exception:
+        # Same failure mode as pipeline.py's identical try/except: an
+        # expired token with a revoked/invalid refresh_token makes
+        # creds.refresh() raise google.auth.exceptions.RefreshError, which
+        # used to propagate straight out of this endpoint as a bare 500 —
+        # exactly the "loading widgets" crash this was filed against.
+        # Degrade to "not connected" instead; calendar/emails below
+        # already treat google_credentials=None as the normal
+        # not-linked-yet state.
+        logger.exception("Google credentials load/refresh failed in /api/dashboard")
+        google_credentials = None
 
     tasks = await dashboard_module.get_tasks()
     notes = await dashboard_module.get_notes()

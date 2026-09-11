@@ -7,6 +7,7 @@ is inherently async via asyncpg, unlike the file stub's sync disk I/O).
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Annotated, Protocol
 
@@ -18,6 +19,8 @@ from google_auth_oauthlib.flow import Flow
 
 from zaki.config import Settings, get_settings
 from zaki.db import get_pool
+
+logger = logging.getLogger(__name__)
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
@@ -187,5 +190,13 @@ async def callback(code: str, state: str) -> dict[str, str]:
 
 @router.get("/status")
 async def status() -> dict[str, bool]:
-    creds = await get_google_credentials(_token_store)
+    try:
+        creds = await get_google_credentials(_token_store)
+    except Exception:
+        # Same RefreshError-on-a-dead-token failure mode fixed in
+        # pipeline.py and /api/dashboard — an expired token with a
+        # revoked/invalid refresh_token must report "not connected" here
+        # too, not crash this status check with a 500.
+        logger.exception("Google credentials load/refresh failed in /auth/google/status")
+        return {"connected": False}
     return {"connected": creds is not None and creds.valid}

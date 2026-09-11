@@ -11,9 +11,13 @@ async function readError(res: Response): Promise<string> {
     const body = await res.json();
     if (typeof body?.detail === "string") return body.detail;
   } catch {
-    // fall through to status text
+    // fall through to the generic message below
   }
-  return `${res.status} ${res.statusText}`;
+  // Our own /api/* route handlers always normalize backend errors into
+  // {"detail": "..."} JSON (see app/api/chat/route.ts), so this branch
+  // should be rare — but if it's ever hit, a raw `${status} ${statusText}`
+  // (e.g. "500 Internal Server Error") is not something to show a user.
+  return "حدث خطأ غير متوقع أثناء التواصل مع الخادم. حاول مرة أخرى بعد قليل.";
 }
 
 export async function sendChat(text: string, sessionId: string): Promise<ChatResponse> {

@@ -13,6 +13,7 @@
 *.sqlite
 *.sqlite3
 data/
+*.log
 temp/
 
 # Python
