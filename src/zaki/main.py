@@ -19,7 +19,6 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from twilio.request_validator import RequestValidator
 
 from zaki.auth import require_api_key
 from zaki.auth_google import (
@@ -425,14 +424,30 @@ async def whatsapp_qr(settings: SettingsDep, key: str | None = None) -> Response
     return Response(content=image_bytes, media_type="image/png")
 
 
+def _twilio_configured(settings: Settings) -> bool:
+    return bool(settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_phone_number)
+
+
 @app.post("/api/webhooks/twilio/voice")
 async def twilio_voice_webhook(request: Request, settings: SettingsDep) -> Response:
     """Twilio fetches this the moment a call connects (both for calls Zaki
     places via place_pending_call, and any inbound call to the Twilio
     number). Validates Twilio's request signature so this can't be spoofed
     by a third party who finds the URL.
+
+    The `twilio` package is an optional dependency (same convention as
+    every other integration here — WhatsApp, Google OAuth, OpenAI STT):
+    nothing at module level in this file imports it, so the app starts
+    fine even if it isn't installed. RequestValidator is imported here,
+    lazily, only on the path that actually needs it — reached only when
+    Twilio is both configured AND installed.
     """
+    if not _twilio_configured(settings):
+        raise HTTPException(status_code=501, detail="Phone calls aren't configured")
+
     if settings.twilio_auth_token and settings.public_base_url:
+        from twilio.request_validator import RequestValidator
+
         form = await request.form()
         validator = RequestValidator(settings.twilio_auth_token.get_secret_value())
         url = f"{settings.public_base_url.rstrip('/')}/api/webhooks/twilio/voice"
@@ -448,6 +463,9 @@ async def twilio_voice_webhook(request: Request, settings: SettingsDep) -> Respo
 async def twilio_voice_stream(websocket: WebSocket) -> None:
     """Twilio Media Streams connects here for the duration of the call —
     see telephony.handle_media_stream for the actual audio bridge."""
+    if not _twilio_configured(get_settings()):
+        await websocket.close(code=1008)
+        return
     await telephony.handle_media_stream(websocket)
 
 

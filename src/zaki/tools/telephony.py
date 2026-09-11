@@ -29,7 +29,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from twilio.rest import Client as TwilioClient
 
 from zaki.audio_codec import pcm16_rms, pcm16_to_ulaw, ulaw_to_pcm16
 from zaki.config import get_settings
@@ -46,13 +45,26 @@ _SILENCE_MS_TO_END_TURN = 900
 _MAX_TURN_MS = 15_000  # safety cap so a stuck-open mic can't buffer forever
 
 
-def _twilio_client() -> TwilioClient:
+def _twilio_client():
+    """Lazily imports the `twilio` package — an optional dependency, same
+    convention as every other integration in this codebase. Nothing at
+    this module's top level imports it, so zaki.tools (and therefore the
+    whole app, since tools/__init__.py imports every tools/*.py module
+    unconditionally) still starts fine even if `twilio` isn't installed;
+    only actually placing a call requires it to be present.
+    """
     settings = get_settings()
     if not (settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_phone_number):
         raise RuntimeError(
             "Phone calls aren't configured — set TWILIO_ACCOUNT_SID, "
             "TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER"
         )
+    try:
+        from twilio.rest import Client as TwilioClient
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Phone calls aren't available — the 'twilio' package isn't installed"
+        ) from exc
     return TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token.get_secret_value())
 
 
